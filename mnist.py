@@ -1,5 +1,6 @@
 from typing import List, Callable
 from tinygrad import Tensor, TinyJit, nn, GlobalCounters
+from tinygrad.nn.state import get_state_dict, safe_save
 from extra.datasets import fetch_mnist
 from tqdm import trange
 
@@ -35,9 +36,10 @@ if __name__ == "__main__":
   opt = nn.optim.Adam(nn.state.get_parameters(model), lr=0.001, b1=0.98, b2=0.999)
 
   @TinyJit
-  def train_step(samples:Tensor) -> Tensor:
+  def train_step() -> Tensor:
     with Tensor.train():
       opt.zero_grad()
+      samples = Tensor.randint(128, high=X_train.shape[0])
       loss = model(X_train[samples]).sparse_categorical_crossentropy(Y_train[samples]).backward()
       opt.step()
       return loss.realize()
@@ -48,7 +50,9 @@ if __name__ == "__main__":
   test_acc = float('nan')
   for i in (t:=trange(500)):
     GlobalCounters.reset()   # NOTE: this makes it nice for DEBUG=2 timing
-    samples = Tensor.randint(128, high=X_train.shape[0])  # TODO: put this in the JIT when rand is fixed
-    loss = train_step(samples)
-    if i%50 == 49: test_acc = get_test_acc(Tensor.randint(2000, high=10000)).item()
+    loss = train_step()
+    if i%50 == 49: test_acc = get_test_acc(Tensor.randint(10000, high=10000)).item()
     t.set_description(f"loss: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
+  
+  state_dict = get_state_dict(model)
+  safe_save(state_dict, "mnist.safetensors")
