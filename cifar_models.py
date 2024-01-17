@@ -177,13 +177,56 @@ class Model7:
 
   def __call__(self, x:Tensor):return x.sequential(self.layers)
 
+class BatchNorm(nn.BatchNorm2d):
+  def __init__(self, num_features):
+    super().__init__(num_features, track_running_stats=False, eps=1e-12, momentum=0.85, affine=True)
+    self.weight.requires_grad = False
+    self.bias.requires_grad = True
+
+class ConvGroup:
+  def __init__(self, channels_in, channels_out):
+    self.conv1 = nn.Conv2d(channels_in,  channels_out, kernel_size=3, padding=1, bias=False)
+    self.conv2 = nn.Conv2d(channels_out, channels_out, kernel_size=3, padding=1, bias=False)
+
+    self.norm1 = BatchNorm(channels_out)
+    self.norm2 = BatchNorm(channels_out)
+
+  def __call__(self, x):
+    x = self.conv1(x)
+    x = x.max_pool2d(2)
+    x = x.float()
+    x = self.norm1(x)
+    x = x.cast(dtypes.default_float)
+    x = x.quick_gelu()
+    residual = x
+    x = self.conv2(x)
+    x = x.float()
+    x = self.norm2(x)
+    x = x.cast(dtypes.default_float)
+    x = x.quick_gelu()
+
+    return x + residual
+
+class SpeedyResNet:
+  def __init__(self):
+    self.net = [
+      nn.Conv2d(3, 12, (3,3)),
+      nn.Conv2d(12, 32, kernel_size=1, bias=False),
+      lambda x: x.quick_gelu(),
+      ConvGroup(32, 64),
+      ConvGroup(64, 256),
+      ConvGroup(256, 512),
+      lambda x: x.max((2,3)),
+      nn.Linear(512, 10, bias=False),
+      lambda x: x.mul(1./9)
+    ]
+
   def __call__(self, x, training=True):
     # pad to 32x32 because whitening conv creates 31x31 images that are awfully slow to compute with
     # TODO: remove the pad but instead let the kernel optimize itself
-    forward = lambda x: x.conv2d(self.whitening).pad2d((1,0,0,1)).sequential(self.net)
-    return forward(x) if training else forward(x)*0.5 + forward(x[..., ::-1])*0.5
+    return x.sequential(self.net)
 
-net = NaiveResNet()
+net = SpeedyResNet()
 params = get_parameters(net)
 optimizer = Adam(params=params)
 
@@ -201,14 +244,14 @@ def step(samples):
         optimizer.step()
         return loss.realize()
 
-@TinyJit
+
 def eval():
-    return ((net(x_eval).argmax(axis=1)==y_eval).mean()*100).realize()
+    return ((net(x_eval[:100]).argmax(axis=1)==y_eval[:100]).mean()*100).realize()
 
 test_acc = 0
 for i in (t:=trange(10000)):
     samples = Tensor.randint(128, high=50000)
     loss = step(samples)
-    if i%1000 == 999:
+    if i%1000 == 100:
         test_acc = eval().item()
     t.set_description(f"loss: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
