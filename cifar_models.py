@@ -12,8 +12,11 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 from efficientnet import EfficientNet
 from typing import List, Callable
+from tinygrad.nn.state import get_state_dict, safe_save
 
 BS = 128
+
+
 
 dicts = []
 
@@ -168,7 +171,62 @@ class WellTunedCNN:
         nn.Linear(256, 10),]
     def __call__(self, x:Tensor):
         return x.sequential(self.layers)
-net = WellTunedCNN()
+
+
+class Block:
+    def __init__(self, cin, cout, stride):
+        self.bn1 = nn.BatchNorm2d(cin)
+        #relu1
+        self.conv1 = nn.Conv2d(cin, cout, (3,3), stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(cout)
+        #relu2
+        self.conv2 = nn.Conv2d(cout, cout, (3, 3), stride=1, padding=1, bias=False)
+
+        self.projection = (stride != 1) or (cin != cout)
+        if self.projection:
+            self.conv3 = nn.Conv2d(cin,cout, (1, 1), stride=stride, bias=False)
+    
+    def __call__(self, x) -> Tensor:
+        x = self.bn1(x)
+        x = x.relu()
+        x1 = x
+        if self.projection:
+            x1 = self.conv3(x)
+        x = self.conv1(x)
+        x = self.bn2(x)
+        x = x.relu()
+        x = self.conv2(x)
+        x = x+x1
+        return x
+
+class FastCifar:
+    def __init__(self, channels):
+        self.channels = [channels, channels*2, channels*4, channels*4]
+        self.layers = [
+            nn.Conv2d(3, self.channels[0], (3, 3), 1, padding=1, bias=False),
+            nn.BatchNorm2d(self.channels[0]),
+            Tensor.relu,
+
+            Block(self.channels[0], self.channels[0], 1),
+            Block(self.channels[0], self.channels[0], 1),
+
+            Block(self.channels[0], self.channels[1], 2),
+            Block(self.channels[1], self.channels[1], 1),
+
+            Block(self.channels[1], self.channels[2], 2),
+            Block(self.channels[2], self.channels[2], 1),
+
+            Block(self.channels[2], self.channels[3], 2),
+            Block(self.channels[3], self.channels[3], 1),
+
+            lambda x: x.reshape((x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])),
+            nn.Linear(4096, 10)
+        ]
+    
+    def __call__(self, x):
+        return x.sequential(self.layers)
+
+net = FastCifar(64)
 params = get_parameters(net)
 optimizer = Adam(params=params)
 
@@ -191,9 +249,11 @@ def eval():
     return ((net(x_eval[:100]).argmax(axis=1)==y_eval[:100]).mean()*100).realize()
 
 test_acc = 0
-for i in (t:=trange(10000)):
+for i in (t:=trange(7000)):
     samples = Tensor.randint(128, high=50000)
     loss = step(samples)
-    if i%1000 == 100:
+    if i%1000 == 999:
         test_acc = eval().item()
+        state_dict = get_state_dict(net)
+        safe_save(state_dict, f"cifar-{i}-{test_acc:5.2f}.safetensors")
     t.set_description(f"loss: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
