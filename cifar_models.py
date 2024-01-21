@@ -120,38 +120,6 @@ class LeNet():
         res = x.sequential(self.layers)
         return res
 
-class DumbNet():
-    def __init__(self):
-        self.layers = [
-            nn.Conv2d(3, 32, (3, 3)),
-            Tensor.relu,
-            nn.BatchNorm2d(32),
-            Tensor.max_pool2d,
-            nn.Conv2d(32, 64, (5, 5)),
-            Tensor.relu,
-            nn.BatchNorm2d(64),
-            lambda x: x.max_pool2d(kernel_size=(3, 3)),
-            nn.Conv2d(64, 64, (3,3)),
-            Tensor.relu,
-            nn.BatchNorm2d(64),
-            lambda x: x.reshape((x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])),
-            nn.Linear(64, 64),
-            Tensor.relu,
-            nn.Linear(64, 10),
-        ]
-    def __call__(self, x:Tensor) -> Tensor:
-        return x.sequential(self.layers)
-
-class DumbestNet():
-    def __init__(self):
-        self.layers = [
-            lambda x:x.reshape((x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])),
-            nn.Linear(1024*3, 10),
-            Tensor.sigmoid
-        ]
-    def __call__(self, x:Tensor) -> Tensor:
-        return x.sequential(self.layers)
-
 class Model7:
   def __init__(self):
     self.layers: List[Callable[[Tensor], Tensor]] = [
@@ -177,56 +145,30 @@ class Model7:
 
   def __call__(self, x:Tensor):return x.sequential(self.layers)
 
-class BatchNorm(nn.BatchNorm2d):
-  def __init__(self, num_features):
-    super().__init__(num_features, track_running_stats=False, eps=1e-12, momentum=0.85, affine=True)
-    self.weight.requires_grad = False
-    self.bias.requires_grad = True
-
-class ConvGroup:
-  def __init__(self, channels_in, channels_out):
-    self.conv1 = nn.Conv2d(channels_in,  channels_out, kernel_size=3, padding=1, bias=False)
-    self.conv2 = nn.Conv2d(channels_out, channels_out, kernel_size=3, padding=1, bias=False)
-
-    self.norm1 = BatchNorm(channels_out)
-    self.norm2 = BatchNorm(channels_out)
-
-  def __call__(self, x):
-    x = self.conv1(x)
-    x = x.max_pool2d(2)
-    x = x.float()
-    x = self.norm1(x)
-    x = x.cast(dtypes.default_float)
-    x = x.quick_gelu()
-    residual = x
-    x = self.conv2(x)
-    x = x.float()
-    x = self.norm2(x)
-    x = x.cast(dtypes.default_float)
-    x = x.quick_gelu()
-
-    return x + residual
-
-class SpeedyResNet:
-  def __init__(self):
-    self.net = [
-      nn.Conv2d(3, 12, (3,3)),
-      nn.Conv2d(12, 32, kernel_size=1, bias=False),
-      lambda x: x.quick_gelu(),
-      ConvGroup(32, 64),
-      ConvGroup(64, 256),
-      ConvGroup(256, 512),
-      lambda x: x.max((2,3)),
-      nn.Linear(512, 10, bias=False),
-      lambda x: x.mul(1./9)
-    ]
-
-  def __call__(self, x, training=True):
-    # pad to 32x32 because whitening conv creates 31x31 images that are awfully slow to compute with
-    # TODO: remove the pad but instead let the kernel optimize itself
-    return x.sequential(self.net)
-
-net = SpeedyResNet()
+class WellTunedCNN:
+    def __init__(self):
+        self.layers = [
+        nn.Conv2d(3, 96, (5,5), padding=2),
+        Tensor.max_pool2d,
+        nn.BatchNorm2d(96),
+        nn.Conv2d(96, 96, (5,5), padding=2),
+        Tensor.max_pool2d,
+        nn.BatchNorm2d(96),
+        nn.Conv2d(96, 80, (5,5), padding=2),
+        Tensor.relu,
+        nn.Conv2d(80, 64, (5,5), padding=2),
+        Tensor.relu,
+        nn.Conv2d(64, 64, (5,5), padding=2),
+        Tensor.relu,
+        nn.Conv2d(64, 96, (5,5), padding=2),
+        Tensor.relu,
+        lambda x: x.reshape((x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])),
+        nn.Linear(6144, 256),
+        Tensor.relu,
+        nn.Linear(256, 10),]
+    def __call__(self, x:Tensor):
+        return x.sequential(self.layers)
+net = WellTunedCNN()
 params = get_parameters(net)
 optimizer = Adam(params=params)
 
