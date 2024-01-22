@@ -16,10 +16,10 @@ import hashlib, pickle
 from tqdm import trange
 from tinygrad import Tensor
 from tinygrad import TinyJit
-from tinygrad.nn.optim import Adam, SGD
+from tinygrad.nn.optim import Adam, SGD, AdamW
 from tinygrad.nn.state import get_parameters
 from tinygrad import dtypes
-from tinygrad.nn.state import safe_save, get_state_dict
+from tinygrad.nn.state import safe_save, get_state_dict, safe_load, load_state_dict
 from memory_profiler import profile
 import torchvision.transforms.functional as F
 from pathos.multiprocessing import ProcessingPool as Pool
@@ -106,65 +106,54 @@ class Model:
         self.layers = [
            nn.Conv2d(3, 96, (11, 11), 4),
            Tensor.relu,
-           lambda x: x.max_pool2d(kernel_size=(3, 3), stride=2),
-           nn.BatchNorm2d(96),
+           lambda x: x.max_pool2d(kernel_size=(3, 3), stride=1),
            nn.Conv2d(96, 256, (5, 5), 2, padding=2),
            Tensor.relu,
-           lambda x: x.max_pool2d(kernel_size=(3, 3), stride=2),
-           nn.BatchNorm2d(256),
+           lambda x: x.max_pool2d(kernel_size=(3, 3), stride=1),
            nn.Conv2d(256, 384, (3, 3), padding=1),
            Tensor.relu,
            nn.Conv2d(384, 384, (3, 3), padding=1),
            Tensor.relu,
            nn.Conv2d(384, 256, (3, 3), padding=1),
            Tensor.relu,
-           lambda x: x.max_pool2d(kernel_size=(3, 3), stride=2),
-           nn.BatchNorm2d(256),
+           lambda x: x.max_pool2d(kernel_size=(3, 3)),
            lambda x: x.reshape(x.shape[0], x.shape[1]*x.shape[2]*x.shape[3]),
-           nn.Linear(1024, 1024),
+           nn.Linear(16384, 4096),
            Tensor.dropout,
            Tensor.relu,
-           nn.Linear(1024, 1000),
+           nn.Linear(4096, 4096),
+           Tensor.dropout,
+           Tensor.relu,
+           nn.Linear(4096, 1000),
+           Tensor.sigmoid
         ]
-    @TinyJit    
     def __call__(self, x:Tensor):
        return x.sequential(self.layers)
 
-X, Y = Tensor.zeros(1, 1, 1, 1), Tensor.zeros(1, 1, 1, 1)
+def eval(x, y):
+  return ((net(x).argmax(axis=1)==y).mean()*100).realize()
 
-@TinyJit
-def eval():
-  return ((net(X).argmax(axis=1)==Y).mean()*100).realize()
 
-@TinyJit
-def step() -> Tensor:
+def step(x, y) -> Tensor:
    with Tensor.train():
         optimizer.zero_grad()
-        loss = net(X).sparse_categorical_crossentropy(Y)
-        loss.backward()
+        loss = net(x).sparse_categorical_crossentropy(y).backward()
         optimizer.step()
         return loss.realize()
-
-tracemalloc.start()
-
+# state = safe_load("/home/michael/Documents/FromTheTensor/AlexNet-499- 4.79.safetensors")
 net = Model()
-
-for i in trange(1000):
-   X,Y = fetch_batch(1024)
-   res= net(X)
-   snapshot = tracemalloc.take_snapshot()
-   display_top(snapshot)
+# load_state_dict(net, state)
 params = get_parameters(net)
-optimizer = Adam(params=params)
-# test_acc = 0
-# for i in (t:=trange(10000)):
-#   X,Y = fetch_batch(1024, val=False)
-#   loss = step()
-#   t.set_description(f"Step:{i}, Loss:{loss.item()}, Test_Acc:{test_acc}")
-#   if i%500==499:
-#     X,Y = fetch_batch(1024, val=True)
-#     test_acc = eval().item()
-#     state_dict = get_state_dict(net)
-#     safe_save(state_dict, f"AlexNet-{i}-{test_acc:5.2f}.safetensors")
-#   snapshot = tracemalloc.take_snapshot()
-#   display_top(snapshot)
+optimizer = SGD(params=params, lr=0.001, momentum=0.9, weight_decay=0.0005, nesterov=True)
+
+
+test_acc = 0
+for i in (t:=trange(20000)):
+  X,Y = fetch_batch(128, val=False)
+  loss = step(X, Y)
+  t.set_description(f"Step:{i}, Loss:{loss.item()}, Test_Acc:{test_acc}")
+  if i%500==499:
+    X,Y = fetch_batch(128, val=True)
+    test_acc = eval(X, Y).item()
+    state_dict = get_state_dict(net)
+    safe_save(state_dict, f"AlexNet-{i}-{test_acc:5.2f}.safetensors")
