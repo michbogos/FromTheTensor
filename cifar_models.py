@@ -16,8 +16,6 @@ from tinygrad.nn.state import get_state_dict, safe_save
 
 BS = 128
 
-
-
 dicts = []
 
 for i in range(5):
