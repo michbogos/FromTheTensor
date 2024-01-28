@@ -25,6 +25,8 @@ import torchvision.transforms.functional as F
 from pathos.multiprocessing import ProcessingPool as Pool
 import tracemalloc
 import linecache
+from typing import List
+from lr_scheduler import ReduceLROnPlateau, LR_Scheduler
 
 
 def display_top(snapshot, key_type='lineno', limit=3):
@@ -79,7 +81,7 @@ def image_load(fn):
   import torchvision.transforms.functional as F
   img = F.resize(Image.open(fn).convert('RGB'), 256, Image.BILINEAR)
   img = F.center_crop(img, 224)
-  ret = np.array(img)
+  ret = np.true_divide(np.array(img), 255.0)
   return ret
 
 def iterate(bs=1024, val=True, shuffle=True):
@@ -103,13 +105,15 @@ def fetch_batch(bs, val=False):
 
 class Model:
     def __init__(self):
-        self.layers = [
+        self.layers:List[nn.Linear] = [
            nn.Conv2d(3, 96, (11, 11), 4),
            Tensor.relu,
            lambda x: x.max_pool2d(kernel_size=(3, 3), stride=1),
+           nn.BatchNorm2d(96),
            nn.Conv2d(96, 256, (5, 5), 2, padding=2),
            Tensor.relu,
            lambda x: x.max_pool2d(kernel_size=(3, 3), stride=1),
+           nn.BatchNorm2d(256),
            nn.Conv2d(256, 384, (3, 3), padding=1),
            Tensor.relu,
            nn.Conv2d(384, 384, (3, 3), padding=1),
@@ -117,15 +121,15 @@ class Model:
            nn.Conv2d(384, 256, (3, 3), padding=1),
            Tensor.relu,
            lambda x: x.max_pool2d(kernel_size=(3, 3)),
+           nn.BatchNorm2d(256),
            lambda x: x.reshape(x.shape[0], x.shape[1]*x.shape[2]*x.shape[3]),
            nn.Linear(16384, 4096),
            Tensor.dropout,
-           Tensor.relu,
+           Tensor.leakyrelu,
            nn.Linear(4096, 4096),
            Tensor.dropout,
-           Tensor.relu,
+           Tensor.leakyrelu,
            nn.Linear(4096, 1000),
-           Tensor.sigmoid
         ]
     def __call__(self, x:Tensor):
        return x.sequential(self.layers)
@@ -140,20 +144,29 @@ def step(x, y) -> Tensor:
         loss = net(x).sparse_categorical_crossentropy(y).backward()
         optimizer.step()
         return loss.realize()
-# state = safe_load("/home/michael/Documents/FromTheTensor/AlexNet-499- 4.79.safetensors")
+state = safe_load("/home/michael/Documents/FromTheTensor/AlexNet-1999-51.46.safetensors")
 net = Model()
-# load_state_dict(net, state)
+load_state_dict(net, state)
 params = get_parameters(net)
-optimizer = SGD(params=params, lr=0.001, momentum=0.9, weight_decay=0.0005, nesterov=True)
+optimizer = SGD(params=params, lr=0.00005, momentum=0.9, weight_decay=0.0005, nesterov=True)
+scheduler = ReduceLROnPlateau(optimizer=optimizer, mode="min", factor=0.5)
 
 
 test_acc = 0
-for i in (t:=trange(20000)):
-  X,Y = fetch_batch(128, val=False)
-  loss = step(X, Y)
-  t.set_description(f"Step:{i}, Loss:{loss.item()}, Test_Acc:{test_acc}")
-  if i%500==499:
-    X,Y = fetch_batch(128, val=True)
-    test_acc = eval(X, Y).item()
-    state_dict = get_state_dict(net)
-    safe_save(state_dict, f"AlexNet-{i}-{test_acc:5.2f}.safetensors")
+i = 0
+for st in range(20):
+  if st%5 == 4:
+     optimizer.lr/=4.0
+  for X,Y in iterate(128, val=False):
+    loss = step(X, Y)
+    scheduler.step(current=loss)
+    i+=1
+    print(f"Step:{i}, Loss:{loss.item()}, Test_Acc:{test_acc}, Epoch:{st} Lr:{optimizer.lr.item()}")
+    if i%1000==999:
+      iterations = 0
+      for Xe,Ye in iterate(256, val=True):
+        iterations += 1
+        test_acc += eval(X, Y).item()
+      test_acc/=iterations
+      state_dict = get_state_dict(net)
+      safe_save(state_dict, f"AlexNet-{i}-{test_acc:5.2f}.safetensors")
