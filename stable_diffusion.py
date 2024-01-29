@@ -9,4 +9,4 @@ pipe.to("cuda")
 
 prompt = "An astronaut riding a green horse"
 
-images = pipe(prompt=prompt).images[0]
+images = pipe(prompt=prompt).images[0].show()

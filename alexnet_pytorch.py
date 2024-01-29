@@ -66,7 +66,7 @@ class Model(torch.nn.Module):
         x = self.relu5(x)
         x = self.linear2(x)
         return x
-device=torch.device("cuda:2")
+device=torch.device("cuda:0")
 net = Model().to(device)
 net.train()
 optimizer = optim.Adadelta(net.parameters(), lr=0.001)

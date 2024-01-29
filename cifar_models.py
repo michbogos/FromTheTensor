@@ -18,13 +18,15 @@ BS = 128
 
 dicts = []
 
+dtypes.default_float = dtypes.float16
+
 for i in range(5):
     with open(f"./datasets/cifar-10-batches-py/data_batch_{i+1}", 'rb') as fo:
         dict = pickle.load(fo, encoding='bytes')
         dicts.append(dict)
         print(dict.keys())
 
-x_train = Tensor(np.reshape(np.concatenate([dicts[i][b"data"] for i in range(5)], dtype=np.float32), (50000, 3, 32, 32))).cast(dtypes.float)
+x_train = Tensor(np.reshape(np.concatenate([dicts[i][b"data"] for i in range(5)], dtype=np.float32), (50000, 3, 32, 32))).cast(dtypes.default_float)
 print(x_train[0][0].dtype)
 y_train = Tensor(np.concatenate([dicts[i][b"labels"] for i in range(5)]))
 x_eval = None
@@ -32,7 +34,7 @@ y_eval = None
 
 with open(f"./datasets/cifar-10-batches-py/test_batch", "rb") as fo:
     dict = pickle.load(fo, encoding='bytes')
-    x_eval = Tensor(np.reshape(np.asarray(dict[b"data"], dtype=np.float32), (10000, 3,32,32))).cast(dtypes.float)
+    x_eval = Tensor(np.reshape(np.asarray(dict[b"data"], dtype=np.float32), (10000, 3,32,32))).cast(dtypes.default_float)
     y_eval = Tensor(np.asarray(dict[b"labels"]))
 
 class NaiveConvnet():
