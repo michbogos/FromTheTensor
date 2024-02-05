@@ -184,6 +184,7 @@ def evaluate(model: nn.Module, eval_data: Tensor) -> float:
             data, targets = get_batch(eval_data, i)
             seq_len = data.size(0)
             output = model(data)
+            print(data[i][0] for i in range(10))
             output_flat = output.view(-1, ntokens)
             total_loss += seq_len * criterion(output_flat, targets).item()
     return total_loss / (len(eval_data) - 1)
