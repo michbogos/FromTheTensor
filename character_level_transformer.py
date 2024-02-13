@@ -11,24 +11,22 @@ from lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 data = open("shakespeare.txt", "r").read()
 
-tokens = [i.split() for i in list(filter(len, data.split(".")))]
-tokens = [j for sub in tokens for j in sub]
 
-vocab = {k:v for v,k in enumerate(set(tokens))}
-vocab_rev = {k:v for k,v in enumerate(set(tokens))}
+vocab = {k:v for v,k in enumerate(set(data))}
+vocab_rev = {k:v for k,v in enumerate(set(data))}
 
 def fetch_batch(bs=128):
     x = []
     y = []
     for i in range(bs):
-        start = random.randint(0, len(tokens)-257)
-        x.append([vocab[token] for token in tokens[start:start+256]])
-        y.append([vocab[tokens[start+i+1]] for i in range(256)])
+        start = random.randint(0, len(data)-257)
+        x.append([vocab[token] for token in data[start:start+256]])
+        y.append([vocab[data[start+i+1]] for i in range(256)])
     return (Tensor(x), Tensor(y))
 
 
 model = transformer.Transformer(len(vocab), 256, 4, 256,8,1024)
-optim = Adam(get_parameters(model), lr=0.0001)
+optim = Adam(get_parameters(model), lr=0.001)
 
 @TinyJit
 def step(X:Tensor, Y:Tensor):
