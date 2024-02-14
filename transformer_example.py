@@ -23,9 +23,11 @@ def make_dataset():
   dataset = []
   for i in range(len(data)-1000):
     dataset.append([vocab[data[i+j]] for j in range(257)])
+  random.shuffle(dataset)
   ds = np.array(dataset).astype(np.float32)
 
   ds_X = ds[:, 0:256]
+
   ds_Y = np.copy(ds[:, 1:])
   ds_X_train, ds_X_test = ds_X[0:800000], ds_X[800000:]
   ds_Y_train, ds_Y_test = ds_Y[0:800000], ds_Y[800000:]

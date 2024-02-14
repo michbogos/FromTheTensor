@@ -8,6 +8,9 @@ import random
 from tqdm import trange
 from tinygrad import TinyJit
 from lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
+import numpy as np
+from extra.training import train, evaluate
+from tinygrad.nn.state import get_state_dict, safe_save
 
 data = open("shakespeare.txt", "r").read()
 
@@ -15,17 +18,22 @@ data = open("shakespeare.txt", "r").read()
 vocab = {k:v for v,k in enumerate(set(data))}
 vocab_rev = {k:v for k,v in enumerate(set(data))}
 
-def fetch_batch(bs=128):
-    x = []
-    y = []
-    for i in range(bs):
-        start = random.randint(0, len(data)-257)
-        x.append([vocab[token] for token in data[start:start+256]])
-        y.append([vocab[data[start+i+1]] for i in range(256)])
-    return (Tensor(x), Tensor(y))
+def make_dataset():
+  dataset = []
+  for i in trange(len(data)-1000):
+    dataset.append([vocab[data[i+j]] for j in range(257)])
+  random.shuffle(dataset)
+  ds = np.array(dataset).astype(np.float32)
+
+  ds_X = ds[:, 0:256]
+
+  ds_Y = np.copy(ds[:, 1:])
+  ds_X_train, ds_X_test = ds_X[0:1000000], ds_X[1000000:]
+  ds_Y_train, ds_Y_test = ds_Y[0:1000000], ds_Y[1000000:]
+  return ds_X_train, ds_Y_train, ds_X_test, ds_Y_test
 
 
-model = transformer.Transformer(len(vocab), 256, 4, 256,8,1024)
+model = transformer.Transformer(len(vocab), 256, 4, 256,16,1024)
 optim = Adam(get_parameters(model), lr=0.001)
 
 @TinyJit
@@ -38,22 +46,25 @@ def step(X:Tensor, Y:Tensor):
 def validate(X, Y):
     return ((model.forward(X).argmax(-1)==Y).mean()*100).realize().item()
 
-val = 0
+xt,yt,xv,yv = make_dataset()
 
-x, y = fetch_batch()
-print(x.shape)
+for i in range(50):
+    train(model, xt, yt, optim=optim, steps=1000)
+    optim.lr /=1.2
+    print(evaluate(model, xv,yv,65))
 
-print(model.forward(x).shape)
+state = get_state_dict(model)
+safe_save(state, "char_transformer.safetensors")
 
-with Tensor.train(val=False):
-    for i in (t:=trange(10000)):
-        X, Y = fetch_batch()
-        loss=step(X,Y)
-        optim.step()
-        t.set_description_str(f"loss:{loss.item()} lr:{optim.lr.item()} validation:{val}")
-        if i%200==0:
-            with Tensor.train(val=True):
-                val = 0
-                for i in range(10):
-                    val += validate(*fetch_batch())
-                val/=10.0
+# with Tensor.train(val=False):
+#     for i in (t:=trange(10000)):
+#         X, Y = fetch_batch()
+#         loss=step(X,Y)
+#         optim.step()
+#         t.set_description_str(f"loss:{loss.item()} lr:{optim.lr.item()} validation:{val}")
+#         if i%200==0:
+#             with Tensor.train(val=True):
+#                 val = 0
+#                 for i in range(10):
+#                     val += validate(*fetch_batch())
+#                 val/=10.0

@@ -73,7 +73,7 @@ if __name__ == "__main__":
   #   GlobalCounters.reset()   # NOTE: this makes it nice for DEBUG=2 timing
   #   loss = train_step()
   #   if i%50 == 49: test_acc = get_test_acc(Tensor.randint(10000, high=10000)).item()
-  #   t.set_description(f"loss: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
+  #   t.set_description(f"losate_dict(model)
+  # safe_save(state_dict, "mnist.safetensors")s: {loss.item():6.2f} test_accuracy: {test_acc:5.2f}%")
   
-  # state_dict = get_state_dict(model)
-  # safe_save(state_dict, "mnist.safetensors")
+  # state_dict = get_st
